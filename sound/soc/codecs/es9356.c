@@ -54,120 +54,15 @@ static bool es9356_volatile_register(struct device *dev, unsigned int reg)
 static int es9356_sdw_read(void *context, unsigned int reg, unsigned int *val)
 {
 	struct device *dev = context;
-	struct rt711_priv *rt711 = dev_get_drvdata(dev);
-	unsigned int sdw_data_3, sdw_data_2, sdw_data_1, sdw_data_0;
-	unsigned int reg2 = 0, reg3 = 0, reg4 = 0, mask, nid, val2;
-	unsigned int is_hda_reg = 1, is_index_reg = 0;
+	struct es9356_private *es9356 = dev_get_drvdata(dev);
+	unsigned int reg2 = 0;
 	int ret;
 
-	if (reg > 0xffff)
-		is_index_reg = 1;
-
-	mask = reg & 0xf000;
-
-	if (is_index_reg) { /* index registers */
-		val2 = reg & 0xff;
-		reg = reg >> 8;
-		nid = reg & 0xff;
-		ret = regmap_write(rt711->sdw_regmap, reg, 0);
-		if (ret < 0)
-			return ret;
-		reg2 = reg + 0x1000;
-		reg2 |= 0x80;
-		ret = regmap_write(rt711->sdw_regmap, reg2, val2);
-		if (ret < 0)
-			return ret;
-
-		reg3 = RT711_PRIV_DATA_R_H | nid;
-		ret = regmap_write(rt711->sdw_regmap, reg3,
-				   ((*val >> 8) & 0xff));
-		if (ret < 0)
-			return ret;
-		reg4 = reg3 + 0x1000;
-		reg4 |= 0x80;
-		ret = regmap_write(rt711->sdw_regmap, reg4, (*val & 0xff));
-		if (ret < 0)
-			return ret;
-	} else if (mask == 0x3000) {
-		reg += 0x8000;
-		ret = regmap_write(rt711->sdw_regmap, reg, *val);
-		if (ret < 0)
-			return ret;
-	} else if (mask == 0x7000) {
-		reg += 0x2000;
-		reg |= 0x800;
-		ret = regmap_write(rt711->sdw_regmap, reg,
-				   ((*val >> 8) & 0xff));
-		if (ret < 0)
-			return ret;
-		reg2 = reg + 0x1000;
-		reg2 |= 0x80;
-		ret = regmap_write(rt711->sdw_regmap, reg2, (*val & 0xff));
-		if (ret < 0)
-			return ret;
-	} else if ((reg & 0xff00) == 0x8300) { /* for R channel */
-		reg2 = reg - 0x1000;
-		reg2 &= ~0x80;
-		ret = regmap_write(rt711->sdw_regmap, reg2,
-				   ((*val >> 8) & 0xff));
-		if (ret < 0)
-			return ret;
-		ret = regmap_write(rt711->sdw_regmap, reg, (*val & 0xff));
-		if (ret < 0)
-			return ret;
-	} else if (mask == 0x9000) {
-		ret = regmap_write(rt711->sdw_regmap, reg,
-				   ((*val >> 8) & 0xff));
-		if (ret < 0)
-			return ret;
-		reg2 = reg + 0x1000;
-		reg2 |= 0x80;
-		ret = regmap_write(rt711->sdw_regmap, reg2, (*val & 0xff));
-		if (ret < 0)
-			return ret;
-	} else if (mask == 0xb000) {
-		ret = regmap_write(rt711->sdw_regmap, reg, *val);
-		if (ret < 0)
-			return ret;
-	} else {
-		ret = regmap_read(rt711->sdw_regmap, reg, val);
-		if (ret < 0)
-			return ret;
-		is_hda_reg = 0;
-	}
-
-	if (is_hda_reg || is_index_reg) {
-		sdw_data_3 = 0;
-		sdw_data_2 = 0;
-		sdw_data_1 = 0;
-		sdw_data_0 = 0;
-		ret = regmap_read(rt711->sdw_regmap, RT711_READ_HDA_3,
-				  &sdw_data_3);
-		if (ret < 0)
-			return ret;
-		ret = regmap_read(rt711->sdw_regmap, RT711_READ_HDA_2,
-				  &sdw_data_2);
-		if (ret < 0)
-			return ret;
-		ret = regmap_read(rt711->sdw_regmap, RT711_READ_HDA_1,
-				  &sdw_data_1);
-		if (ret < 0)
-			return ret;
-		ret = regmap_read(rt711->sdw_regmap, RT711_READ_HDA_0,
-				  &sdw_data_0);
-		if (ret < 0)
-			return ret;
-		*val = ((sdw_data_3 & 0xff) << 24) |
-		       ((sdw_data_2 & 0xff) << 16) |
-		       ((sdw_data_1 & 0xff) << 8) | (sdw_data_0 & 0xff);
-	}
-
-	if (is_hda_reg == 0)
-		dev_dbg(dev, "[%s] %04x => %08x\n", __func__, reg, *val);
-	else if (is_index_reg)
-		dev_dbg(dev, "[%s] %04x %04x %04x %04x => %08x\n", __func__,
-			reg, reg2, reg3, reg4, *val);
-	else
+	ret = regmap_read(es9356->regmap, reg, val);
+	if (ret < 0)
+		return ret;
+	dev_dbg(dev, "[%s] %04x => %08x\n", __func__, reg, *val);
+	
 		dev_dbg(dev, "[%s] %04x %04x => %08x\n", __func__, reg, reg2,
 			*val);
 
@@ -177,77 +72,15 @@ static int es9356_sdw_read(void *context, unsigned int reg, unsigned int *val)
 static int es9356_sdw_write(void *context, unsigned int reg, unsigned int val)
 {
 	struct device *dev = context;
-	struct rt711_priv *rt711 = dev_get_drvdata(dev);
-	unsigned int reg2 = 0, reg3, reg4, nid, mask, val2;
-	unsigned int is_index_reg = 0;
+	struct es9356_private *es9356 = dev_get_drvdata(dev);
 	int ret;
 
-	if (reg > 0xffff)
-		is_index_reg = 1;
+	ret = regmap_write(es9356->regmap, reg, val);
+	if (ret < 0)
+		return ret;
 
-	mask = reg & 0xf000;
 
-	if (is_index_reg) { /* index registers */
-		val2 = reg & 0xff;
-		reg = reg >> 8;
-		nid = reg & 0xff;
-		ret = regmap_write(rt711->sdw_regmap, reg, 0);
-		if (ret < 0)
-			return ret;
-		reg2 = reg + 0x1000;
-		reg2 |= 0x80;
-		ret = regmap_write(rt711->sdw_regmap, reg2, val2);
-		if (ret < 0)
-			return ret;
-
-		reg3 = RT711_PRIV_DATA_W_H | nid;
-		ret = regmap_write(rt711->sdw_regmap, reg3,
-				   ((val >> 8) & 0xff));
-		if (ret < 0)
-			return ret;
-		reg4 = reg3 + 0x1000;
-		reg4 |= 0x80;
-		ret = regmap_write(rt711->sdw_regmap, reg4, (val & 0xff));
-		if (ret < 0)
-			return ret;
-		is_index_reg = 1;
-	} else if (reg < 0x4fff) {
-		ret = regmap_write(rt711->sdw_regmap, reg, val);
-		if (ret < 0)
-			return ret;
-	} else if (reg == RT711_FUNC_RESET) {
-		ret = regmap_write(rt711->sdw_regmap, reg, val);
-		if (ret < 0)
-			return ret;
-	} else if (mask == 0x7000) {
-		ret = regmap_write(rt711->sdw_regmap, reg, ((val >> 8) & 0xff));
-		if (ret < 0)
-			return ret;
-		reg2 = reg + 0x1000;
-		reg2 |= 0x80;
-		ret = regmap_write(rt711->sdw_regmap, reg2, (val & 0xff));
-		if (ret < 0)
-			return ret;
-	} else if ((reg & 0xff00) == 0x8300) { /* for R channel */
-		reg2 = reg - 0x1000;
-		reg2 &= ~0x80;
-		ret = regmap_write(rt711->sdw_regmap, reg2,
-				   ((val >> 8) & 0xff));
-		if (ret < 0)
-			return ret;
-		ret = regmap_write(rt711->sdw_regmap, reg, (val & 0xff));
-		if (ret < 0)
-			return ret;
-	}
-
-	if (reg2 == 0)
-		dev_dbg(dev, "[%s] %04x <= %04x\n", __func__, reg, val);
-	else if (is_index_reg)
-		dev_dbg(dev, "[%s] %04x %04x %04x %04x <= %04x %04x\n",
-			__func__, reg, reg2, reg3, reg4, val2, val);
-	else
-		dev_dbg(dev, "[%s] %04x %04x <= %04x\n", __func__, reg, reg2,
-			val);
+	dev_dbg(dev, "[%s] %04x <= %04x\n", __func__, reg, val);
 
 	return 0;
 }
@@ -435,7 +268,7 @@ static const struct dev_pm_ops es9356_sdw_pm = {
 				   es9356_sdw_runtime_resume, NULL)
 };
 
-// Module Region
+
 
 static int es9356_sdw_probe(struct sdw_slave *peripheral,
 			    const struct sdw_device_id *id)
@@ -447,10 +280,22 @@ static int es9356_sdw_probe(struct sdw_slave *peripheral,
 	struct regmap *regmap;
 	int irq, ret;
 
+	regmap = devm_regmap_init_sdw(peripheral, &es9356_regmap);
+	if (IS_ERR(regmap))
+		return PTR_ERR(regmap);
+	
 	// allocate driver memory
 	es9356 = devm_kzalloc(dev, sizeof(*es9356), GFP_KERNEL);
 	if (!es9356)
 		return -ENOMEM;
+	dev_set_drvdata(dev, es9356);
+
+	es9356->sdw_peripheral = peripheral;
+	es9356->regmap = regmap;
+	regcache_cache_only(es9356->regmap, true);
+
+	mutex_init(&es9356->irq_lock);
+
 	// get gpio resource
 	if (has_acpi_companion(dev))
 		irq = acpi_dev_gpio_irq_get(ACPI_COMPANION(dev), 0);
